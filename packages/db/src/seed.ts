@@ -9,7 +9,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, ne, notInArray, sql } from "drizzle-orm";
 import { BAND_PRIORS, type Band } from "@qa/scoring";
 import { sweepTemplate, type ItemTemplate } from "@qa/items";
 import { validateLesson, type Lesson } from "@qa/learning";
@@ -118,6 +118,13 @@ export async function seedContent(bundlePath = defaultBundlePath(), log = consol
         .onConflictDoNothing();
     }
 
+    // Templates dropped from the pack stop being served. Rows stay: past responses refer to them.
+    const retiredRows = await tx
+      .update(s.itemTemplates)
+      .set({ status: "retired" })
+      .where(and(notInArray(s.itemTemplates.id, templates.map((t) => t.id)), ne(s.itemTemplates.status, "retired")))
+      .returning({ id: s.itemTemplates.id });
+
     for (const l of lessons) {
       const issues = validateLesson(l, misconceptionIds).filter((i) => i.severity === "fail");
       if (issues.length) throw new Error(`lesson ${l.skill_id}: ${issues.map((i) => i.message).join("; ")}`);
@@ -132,7 +139,8 @@ export async function seedContent(bundlePath = defaultBundlePath(), log = consol
       `seeded ${bundle.domains.length} domains, ${bundle.skills.length} skills, ${edges.length} edges, ` +
         `${bundle.misconceptions.length} misconceptions, ${templates.length} templates ` +
         `(${promotable} pass the sweep, ${templates.length - blocked} serveable), ${lessons.length} lessons, ` +
-        `${Object.keys(bundle.readings).length} readings`,
+        `${Object.keys(bundle.readings).length} readings` +
+        (retiredRows.length ? `; retired ${retiredRows.length} templates no longer in the pack` : ""),
     );
   });
 }
