@@ -39,7 +39,7 @@ async function activeUsers(days: number, now: Date) {
   return getDb()
     .select()
     .from(s.users)
-    .where(and(isNull(s.users.deletedAt), sql`exists (select 1 from sessions x where x.user_id = ${s.users.id} and x.started_at > ${since})`));
+    .where(and(isNull(s.users.deletedAt), sql`exists (select 1 from sessions x where x.user_id = ${s.users.id} and x.started_at > ${since.toISOString()}::timestamptz)`));
 }
 
 async function alreadySent(userId: string, name: string, day: string) {

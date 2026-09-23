@@ -2,7 +2,7 @@
  * The admin and authoring tool (product spec §12, §16; tech spec §8 admin, §19.7).
  * Mounted under /api/admin with its own role check.
  */
-import { and, asc, desc, eq, inArray, isNull, lt, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, lt, ne, sql } from "drizzle-orm";
 import { getDb, schema as s } from "@qa/db";
 import { buildInstance, sweepTemplate, type ItemTemplate } from "@qa/items";
 import { lessonLift } from "@qa/learning";
@@ -426,7 +426,7 @@ export async function lessonHealth() {
       const rs = await db
         .select({ p: s.responses.pPred, correct: s.responses.correct })
         .from(s.responses)
-        .where(and(eq(s.responses.userId, c.userId), eq(s.responses.skillId, lesson.skill_id), sql`${s.responses.createdAt} > ${c.completedAt}`, isNull(s.responses.voidedAt), eq(s.responses.mode, "practice")))
+        .where(and(eq(s.responses.userId, c.userId), eq(s.responses.skillId, lesson.skill_id), gt(s.responses.createdAt, c.completedAt), isNull(s.responses.voidedAt), eq(s.responses.mode, "practice")))
         .orderBy(asc(s.responses.createdAt))
         .limit(5);
       const l = lessonLift(rs);
@@ -463,7 +463,7 @@ export async function statsRollup() {
   const rows = await db
     .select({ templateId: s.responses.templateId, version: s.responses.templateVersion, sessionId: s.responses.sessionId, y: s.responses.y, elapsed: s.responses.elapsedMs })
     .from(s.responses)
-    .where(and(isNull(s.responses.voidedAt), sql`${s.responses.createdAt} > ${since}`));
+    .where(and(isNull(s.responses.voidedAt), gt(s.responses.createdAt, since)));
   const sessionAcc = new Map<string, { sum: number; n: number }>();
   for (const r of rows) {
     const a = sessionAcc.get(r.sessionId) ?? { sum: 0, n: 0 };

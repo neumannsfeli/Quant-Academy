@@ -7,7 +7,8 @@ export default defineConfig({
     hookTimeout: 120_000,
     env: {
       DATABASE_URL: process.env.TEST_DATABASE_URL ?? "postgres://qa:qa@localhost:5432/quant_academy_test",
-      CONTENT_BUNDLE: process.env.CONTENT_BUNDLE ?? "/home/user/Quant-Academy-Curriculum-/dist/content.json",
+      // The curriculum repository is checked out next to this one.
+      CONTENT_BUNDLE: process.env.CONTENT_BUNDLE ?? new URL("../../../Quant-Academy-Curriculum-/dist/content.json", import.meta.url).pathname,
       SERVE_UNREVIEWED_CONTENT: "true",
       RATE_LIMITS: "off",
       MAIL_DIR: "/tmp/qa-test-mail",

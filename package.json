@@ -10,7 +10,8 @@
     "dev": "pnpm --filter @qa/web dev",
     "db:migrate": "pnpm --filter @qa/db migrate",
     "db:seed": "pnpm --filter @qa/db seed",
-    "grader": "cd apps/grader && python3 -m uvicorn grader.main:app --port 8001"
+    "grader": "cd apps/grader && $(test -x .venv/bin/python && echo .venv/bin/python || echo python3) -m uvicorn grader.main:app --port 8001",
+    "jobs": "pnpm --filter @qa/jobs"
   },
   "devDependencies": {
     "typescript": "^5.6.3",

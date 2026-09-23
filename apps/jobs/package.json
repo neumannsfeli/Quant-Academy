@@ -1,0 +1,19 @@
+{
+  "name": "@qa/jobs",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "src/handler.ts",
+  "scripts": {
+    "once": "tsx src/local.ts once",
+    "schedule": "tsx src/local.ts schedule",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@qa/core": "workspace:*",
+    "@qa/db": "workspace:*"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2"
+  }
+}

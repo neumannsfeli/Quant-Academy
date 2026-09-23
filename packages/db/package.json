@@ -13,8 +13,8 @@
   },
   "scripts": {
     "generate": "NODE_OPTIONS=--import=tsx drizzle-kit generate",
-    "migrate": "tsx src/migrate.ts",
-    "seed": "tsx src/seed.ts",
+    "migrate": "tsx --env-file-if-exists=../../.env src/migrate.ts",
+    "seed": "tsx --env-file-if-exists=../../.env src/seed.ts",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {

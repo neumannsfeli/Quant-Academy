@@ -8,6 +8,7 @@
  */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { and, eq, sql } from "drizzle-orm";
 import { BAND_PRIORS, type Band } from "@qa/scoring";
 import { sweepTemplate, type ItemTemplate } from "@qa/items";
@@ -19,8 +20,11 @@ import * as s from "./schema";
 /** Sweep failures that block serving outright. FEW_DISTINCT blocks promotion only. */
 const SERVE_BLOCKING = new Set(["BUILD", "NON_FINITE", "MCQ_COLLISION", "STEM_RENDER", "NEAR_MISS_EQUALS_ANSWER", "RESERVED_NAME", "MAGNITUDE_SPAN"]);
 
+const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
+
+/** CONTENT_BUNDLE may be relative: it is resolved against the repository root, not the cwd. */
 export function defaultBundlePath(): string {
-  return process.env.CONTENT_BUNDLE ?? resolve(process.cwd(), "../../../Quant-Academy-Curriculum-/dist/content.json");
+  return resolve(REPO_ROOT, process.env.CONTENT_BUNDLE ?? "../Quant-Academy-Curriculum-/dist/content.json");
 }
 
 /** Tech spec §19.11: tier = longest chain of same-domain prerequisites. */
