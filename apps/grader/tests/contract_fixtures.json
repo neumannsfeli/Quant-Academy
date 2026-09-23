@@ -1,0 +1,19 @@
+[
+  {"submitted": "k*(N - k)", "answer": "k*N - k**2", "variables": ["k","N"], "assumptions": {"k":"positive integer","N":"positive integer"}, "correct": true},
+  {"submitted": "kN - k^2", "answer": "k*N - k**2", "variables": ["k","N"], "assumptions": {}, "expect_error": "PARSE_ERROR"},
+  {"submitted": "k(N-k)", "answer": "k*N - k**2", "variables": ["k","N"], "assumptions": {}, "correct": true},
+  {"submitted": "n*(n-1)/2", "answer": "choose(n, 2)", "variables": ["n"], "assumptions": {"n": "positive integer"}, "correct": true},
+  {"submitted": "n^2/2", "answer": "choose(n, 2)", "variables": ["n"], "assumptions": {"n": "positive integer"}, "correct": false},
+  {"submitted": "a/(a+b)", "answer": "1 - b/(a+b)", "variables": ["a","b"], "assumptions": {"a":"positive integer","b":"positive integer"}, "correct": true},
+  {"submitted": "b/(a+b)", "answer": "a/(a+b)", "variables": ["a","b"], "assumptions": {"a":"positive integer","b":"positive integer"}, "correct": false},
+  {"submitted": "(1-(q/p)^i)/(1-(q/p)^N)", "answer": "((q/p)^i - 1)/((q/p)^N - 1)", "variables": ["p","q","i","N"], "assumptions": {"p":"probability","q":"probability","i":"positive integer","N":"positive integer"}, "correct": true},
+  {"submitted": "log(x^2)", "answer": "2*log(x)", "variables": ["x"], "assumptions": {"x":"positive"}, "correct": true},
+  {"submitted": "sqrt(n)*sigma", "answer": "sigma*n^(1/2)", "variables": ["n","sigma"], "assumptions": {"n":"positive","sigma":"positive"}, "correct": true},
+  {"submitted": "n*sigma", "answer": "sigma*sqrt(n)", "variables": ["n","sigma"], "assumptions": {"n":"positive","sigma":"positive"}, "correct": false},
+  {"submitted": "__import__('os')", "answer": "x", "variables": ["x"], "assumptions": {}, "expect_error": "PARSE_ERROR"},
+  {"submitted": "x.real", "answer": "x", "variables": ["x"], "assumptions": {}, "expect_error": "PARSE_ERROR"},
+  {"submitted": "y + 1", "answer": "x + 1", "variables": ["x"], "assumptions": {}, "expect_error": "PARSE_ERROR"},
+  {"submitted": "1/(1-p)", "answer": "1/(1-p)", "variables": ["p"], "assumptions": {"p":"probability"}, "correct": true},
+  {"submitted": "(1-p)/p", "answer": "1/p", "variables": ["p"], "assumptions": {"p":"probability"}, "correct": false},
+  {"submitted": "N*H", "answer": "N*H", "variables": ["N","H"], "assumptions": {}, "correct": true}
+]

@@ -5,7 +5,7 @@
  *
  * Grammar: numbers, identifiers, + - * / ^ ( ) , unary ±, comparisons
  * (< <= > >= == !=), boolean (&& || !), constants pi and e, and the functions
- * floor ceil abs min max sqrt log exp factorial choose mod.
+ * floor ceil abs min max sqrt log exp factorial choose mod harmonic.
  * There is deliberately no `sum`. tools/validate.py implements the same grammar.
  */
 
@@ -43,6 +43,7 @@ export const FUNCTIONS: Record<string, { min: number; max: number; fn: (...a: nu
   factorial: { min: 1, max: 1, fn: factorial },
   choose: { min: 2, max: 2, fn: choose },
   mod: { min: 2, max: 2, fn: (a, b) => a - b * Math.floor(a / b) },
+  harmonic: { min: 1, max: 1, fn: harmonic },
 };
 
 export const CONSTANTS: Record<string, number> = { pi: Math.PI, e: Math.E };
@@ -53,6 +54,14 @@ function factorial(n: number): number {
   let r = 1;
   for (let i = 2; i <= n; i++) r *= i;
   return r;
+}
+
+/** H_n — the one named sequence in the grammar; authors still may not write a general sum. */
+function harmonic(n: number): number {
+  if (!Number.isInteger(n) || n < 0 || n > 1_000_000) return NaN;
+  let h = 0;
+  for (let i = n; i >= 1; i--) h += 1 / i;
+  return h;
 }
 
 function choose(n: number, k: number): number {
@@ -260,9 +269,15 @@ export function parse(src: string, opts: ParseOptions = {}): Rpn {
   cache.set(key, out);
   return out;
 
+  /** Record that the innermost open parenthesis has seen an argument (operators may sit above it). */
   function markArg() {
-    const top = stack[stack.length - 1];
-    if (top && top.kind === "lp") top.sawArg = true;
+    for (let i = stack.length - 1; i >= 0; i--) {
+      const frame = stack[i]!;
+      if (frame.kind === "lp") {
+        frame.sawArg = true;
+        return;
+      }
+    }
   }
 }
 

@@ -42,6 +42,9 @@ describe("expression parser", () => {
     ["3 > 2 && !(1 == 2)", 1],
     ["1e3 + .5", 1000.5],
     ["log(e)", 1],
+    ["harmonic(4)", 25 / 12],
+    ["exp(-1) * e", 1],
+    ["max(-1, -2 * 3)", -1],
   ];
   for (const [src, v] of cases) it(src, () => expect(evaluate(src)).toBeCloseTo(v, 12));
 

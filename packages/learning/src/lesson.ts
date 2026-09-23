@@ -10,6 +10,8 @@ export type LessonCheck =
       stem: string;
       answer: string;
       tolerance?: { abs?: number; rel?: number };
+      /** targeted feedback for specific wrong answers */
+      feedback?: { answer: string | number; text: string }[];
       hints?: string[];
       solution: string;
     }
@@ -22,11 +24,11 @@ export type LessonCheck =
       solution: string;
     };
 
-type StepBase = { id: string; title?: string; addresses?: string[] };
+type StepBase = { id: string; title?: string; minutes?: number; addresses?: string[] };
 
 export type LessonStep =
   | (StepBase & { type: "concept"; body: string })
-  | (StepBase & { type: "interactive"; body: string; widget: Widget; config: Record<string, unknown> })
+  | (StepBase & { type: "interactive"; body: string; widget: Widget; config: Record<string, unknown>; note?: string })
   | (StepBase & {
       type: "worked";
       problem: string;

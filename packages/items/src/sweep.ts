@@ -1,3 +1,4 @@
+import { CONSTANTS, FUNCTIONS } from "./expr";
 import { buildInstance, type Instance } from "./instance";
 import type { ItemTemplate } from "./template";
 
@@ -22,7 +23,7 @@ function answerKey(inst: Instance): string {
 }
 
 function numericAnswers(inst: Instance): number[] {
-  if (inst.numeric) return [inst.numeric.answer, ...inst.numeric.nearMiss.map((n) => n.value)];
+  if (inst.numeric) return [inst.numeric.answer];
   if (inst.checkpoints) return inst.checkpoints.flatMap((c) => (c.answer !== undefined ? [c.answer] : []));
   if (inst.drill) return inst.drill.items.map((i) => i.answer);
   return [];
@@ -35,6 +36,12 @@ function numericAnswers(inst: Instance): number[] {
  */
 export function sweepTemplate(template: ItemTemplate, seeds = 200, previewCount = 5): SweepResult {
   const issues: SweepIssue[] = [];
+  const names = [...(template.params ?? []), ...(template.derived ?? [])].map((p) => p.name);
+  for (const n of names) {
+    if (n in CONSTANTS || n in FUNCTIONS) {
+      issues.push({ severity: "fail", code: "RESERVED_NAME", message: `parameter "${n}" shadows a constant or function` });
+    }
+  }
   const answers = new Set<string>();
   const instances = new Set<string>();
   const previews: Instance[] = [];
@@ -59,7 +66,12 @@ export function sweepTemplate(template: ItemTemplate, seeds = 200, previewCount 
     for (const v of numericAnswers(inst)) {
       if (!Number.isFinite(v)) {
         issues.push({ severity: "fail", code: "NON_FINITE", message: `answer is ${v}`, seed });
-      } else if (v !== 0) magnitudes.push(Math.abs(v));
+      } else if (Math.abs(v) > 1e-9) magnitudes.push(Math.abs(v)); // ignore floating-point dust around zero
+    }
+    for (const n of inst.numeric?.nearMiss ?? []) {
+      if (!Number.isFinite(n.value)) {
+        issues.push({ severity: "fail", code: "NON_FINITE", message: `near miss ${n.misconceptionId} is ${n.value}`, seed });
+      }
     }
     if (inst.numeric) {
       for (const n of inst.numeric.nearMiss) {
