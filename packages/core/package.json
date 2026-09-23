@@ -1,32 +1,29 @@
 {
-  "name": "@qa/db",
+  "name": "@qa/core",
   "version": "1.0.0",
   "private": true,
   "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",
-  "exports": {
-    ".": "./src/index.ts",
-    "./schema": "./src/schema.ts",
-    "./content-schema": "./src/content-schema.ts",
-    "./seed": "./src/seed.ts"
-  },
+  "exports": { ".": "./src/index.ts", "./*": "./src/*.ts" },
   "scripts": {
-    "generate": "NODE_OPTIONS=--import=tsx drizzle-kit generate",
-    "migrate": "tsx src/migrate.ts",
-    "seed": "tsx src/seed.ts",
+    "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@qa/db": "workspace:*",
     "@qa/items": "workspace:*",
     "@qa/learning": "workspace:*",
     "@qa/scoring": "workspace:*",
     "drizzle-orm": "^0.38.3",
-    "postgres": "^3.4.5",
+    "katex": "^0.16.11",
+    "marked": "^15.0.4",
+    "sanitize-html": "^2.14.0",
     "zod": "^3.24.1"
   },
   "devDependencies": {
-    "drizzle-kit": "^0.30.1",
+    "@types/katex": "^0.16.7",
+    "@types/sanitize-html": "^2.13.0",
     "tsx": "^4.19.2"
   }
 }
