@@ -1,6 +1,8 @@
 [
   {"submitted": "k*(N - k)", "answer": "k*N - k**2", "variables": ["k","N"], "assumptions": {"k":"positive integer","N":"positive integer"}, "correct": true},
-  {"submitted": "kN - k^2", "answer": "k*N - k**2", "variables": ["k","N"], "assumptions": {}, "expect_error": "PARSE_ERROR"},
+  {"submitted": "kN - k^2", "answer": "k*N - k**2", "variables": ["k","N"], "assumptions": {}, "correct": true},
+  {"submitted": "kM - k^2", "answer": "k*N - k**2", "variables": ["k","N"], "assumptions": {}, "expect_error": "PARSE_ERROR"},
+  {"submitted": "sigma*sqrt(n)", "answer": "sigma*n^(1/2)", "variables": ["sigma","n"], "assumptions": {"sigma":"positive","n":"positive"}, "correct": true},
   {"submitted": "k(N-k)", "answer": "k*N - k**2", "variables": ["k","N"], "assumptions": {}, "correct": true},
   {"submitted": "n*(n-1)/2", "answer": "choose(n, 2)", "variables": ["n"], "assumptions": {"n": "positive integer"}, "correct": true},
   {"submitted": "n^2/2", "answer": "choose(n, 2)", "variables": ["n"], "assumptions": {"n": "positive integer"}, "correct": false},

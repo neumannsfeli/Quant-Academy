@@ -1,0 +1,8 @@
+{
+  "name": "@qa/tokens",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": { "./tokens.css": "./tokens.css", "./tokens.json": "./figma-variables.json" },
+  "scripts": { "build": "node build.mjs" }
+}

@@ -114,6 +114,19 @@ def _depth(s: str) -> int:
     return best
 
 
+def split_implicit(src: str, symbols: dict[str, sp.Symbol]) -> str:
+    """kN → k*N, but only when kN is not itself a name and every letter is a declared
+    single-letter variable. Multi-letter variables such as sigma are never split."""
+    def repl(m: re.Match) -> str:
+        ident = m.group(0)
+        if ident in symbols or ident in FUNCTIONS or ident in CONSTANTS:
+            return ident
+        if len(ident) > 1 and all(ch in symbols for ch in ident):
+            return "*".join(ident)
+        return ident
+    return re.sub(r"[A-Za-z_][A-Za-z0-9_]*", repl, src)
+
+
 def parse(src: str, symbols: dict[str, sp.Symbol]) -> sp.Expr:
     if len(src) > MAX_LENGTH:
         raise GradeError("PARSE_ERROR", "expression too long")
@@ -125,6 +138,7 @@ def parse(src: str, symbols: dict[str, sp.Symbol]) -> sp.Expr:
         raise GradeError("PARSE_ERROR", "empty expression")
     if _depth(src) > MAX_DEPTH:
         raise GradeError("PARSE_ERROR", "expression too deeply nested")
+    src = split_implicit(src, symbols)
     for ident in re.findall(r"[A-Za-z_][A-Za-z0-9_]*", src):
         if ident not in symbols and ident not in FUNCTIONS and ident not in CONSTANTS:
             raise GradeError("PARSE_ERROR", f'"{ident}" is not one of the allowed variables')

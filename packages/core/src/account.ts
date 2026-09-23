@@ -191,7 +191,7 @@ export async function deleteAccount(userId: string, confirmEmail: string) {
   return { ok: true };
 }
 
-const outcomeSchema = z.object({ firm: z.string().max(80).nullable().optional(), stage: z.string().max(40).nullable().optional(), result: z.enum(["offer", "rejected", "next_round", "withdrew", "waiting"]) });
+const outcomeSchema = z.object({ firm: z.string().max(80).nullable().optional(), stage: z.string().max(40).nullable().optional(), result: z.enum(["offer", "next_round", "rejected", "waiting", "declined"]) });
 
 export async function reportOutcome(userId: string, body: unknown, readiness: number | null) {
   const parsed = outcomeSchema.safeParse(body);
