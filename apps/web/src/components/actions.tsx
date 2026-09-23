@@ -6,7 +6,7 @@ import { call, copyFor } from "@/lib/client";
 import { Button } from "./ui";
 
 /** Starts (or resumes) a session and opens the runner. */
-export function StartSession({ mode = "practice", children, kind = "primary", className = "", size }: { mode?: "practice" | "placement" | "assessment" | "review"; children: ReactNode; kind?: "primary" | "secondary" | "ghost"; className?: string; size?: "sm" | "md" | "lg" }) {
+export function StartSession({ mode = "practice", skillId, children, kind = "primary", className = "", size }: { mode?: "practice" | "placement" | "assessment" | "review"; skillId?: string; children: ReactNode; kind?: "primary" | "secondary" | "ghost"; className?: string; size?: "sm" | "md" | "lg" }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -21,7 +21,7 @@ export function StartSession({ mode = "practice", children, kind = "primary", cl
           setBusy(true);
           setErr(null);
           try {
-            const r = await call<{ sessionId: string }>("/api/sessions", { json: { mode } });
+            const r = await call<{ sessionId: string }>("/api/sessions", { json: { mode, skillId } });
             router.push(`/session/${r.sessionId}`);
           } catch (e) {
             setErr(copyFor(e));

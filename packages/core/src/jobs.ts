@@ -15,7 +15,8 @@ import { loadStates } from "./states";
 import { readinessView, skillView } from "./status";
 import { archetypeFor } from "./content";
 
-export type JobName = "sweeper" | "snapshots" | "daily-plan" | "weekly-summary" | "outcome-ask" | "stats-rollup" | "cleanup";
+export const JOB_NAMES = ["sweeper", "snapshots", "daily-plan", "weekly-summary", "outcome-ask", "stats-rollup", "cleanup"] as const;
+export type JobName = (typeof JOB_NAMES)[number];
 export type JobPayload = { now?: string; force?: boolean };
 
 function localHour(now: Date, tz: string): number {

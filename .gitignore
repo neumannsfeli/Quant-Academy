@@ -12,3 +12,5 @@ test-results
 playwright-report
 .turbo
 *.tsbuildinfo
+*.tmp.mjs
+.mail

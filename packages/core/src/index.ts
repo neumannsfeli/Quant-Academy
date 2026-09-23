@@ -18,3 +18,4 @@ export * from "./views";
 export * from "./account";
 export * from "./admin";
 export * from "./jobs";
+export * from "./demo";

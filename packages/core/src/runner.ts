@@ -38,7 +38,9 @@ import { gradeCheckpoint, gradeDrillItem, gradeMain, type Graded } from "./gradi
 import { answerHtml, checkpointPayload, clientPayload, instanceFor, solutionHtml } from "./instances";
 import { rateLimit } from "./ratelimit";
 import { interviewDateOf, loadStates, saveState, type StoredState } from "./states";
-import { readinessView } from "./status";
+import { practiceUnlocked, readinessView } from "./status";
+
+export const SKILL_PRACTICE_ITEMS = 8;
 import { renderTex } from "./tex";
 
 export type Mode = "practice" | "placement" | "assessment" | "review" | "drill";
@@ -115,14 +117,14 @@ export async function previewPlan(userId: string, now = new Date()): Promise<Pla
 
 // ── Starting a session ──────────────────────────────────────────────────────
 
-export async function startSession(userId: string, mode: Mode, now = new Date()) {
+export async function startSession(userId: string, mode: Mode, now = new Date(), opts: { skillId?: string } = {}) {
   const db = getDb();
   const user = await getUser(db, userId);
   const content = await getContent();
   const arch = archetypeFor(content, user.archetypeId);
 
   // Session resume (edge state): an unfinished session of the same mode is continued, not duplicated.
-  const [open] = await db
+  const [open] = opts.skillId ? [] : await db
     .select()
     .from(s.sessions)
     .where(and(eq(s.sessions.userId, userId), eq(s.sessions.mode, mode), isNull(s.sessions.endedAt), gt(s.sessions.startedAt, new Date(now.getTime() - OPEN_SESSION_MAX_AGE_MS))))
@@ -148,6 +150,12 @@ export async function startSession(userId: string, mode: Mode, now = new Date())
     if (!unlock.unlocked) throw new AppError("ASSESSMENT_LOCKED", unlock.nextAllowedAt ? `next attempt from ${unlock.nextAllowedAt.toISOString()}` : "not yet unlocked");
     plan = emptyPlan(Array.from({ length: ASSESSMENT_ITEMS }, () => ({ kind: "item" as const, bucket: "assessment" as const })));
     config.deadline = new Date(now.getTime() + ASSESSMENT_MINUTES * 60_000).toISOString();
+  } else if (opts.skillId) {
+    const skill = content.skills.get(opts.skillId);
+    if (!skill || !content.templatesBySkill.has(skill.id)) throw new AppError("NOT_FOUND", "skill");
+    if (!practiceUnlocked(skill, states)) throw new AppError("EMPTY_QUEUE", "practice for this skill is still locked");
+    plan = emptyPlan(Array.from({ length: SKILL_PRACTICE_ITEMS }, () => ({ kind: "item" as const, bucket: "new" as Bucket, skillId: skill.id })));
+    plan.counts.new = SKILL_PRACTICE_ITEMS;
   } else {
     plan = composePlan({
       content,
@@ -391,6 +399,9 @@ async function chooseItem(
     skill = pool[randomInt(0, Math.max(1, pool.length))];
     band = (rand() < 0.5 ? 3 : 4) as Band;
     bucket = "assessment";
+  } else if (slot.skillId && content.skills.has(slot.skillId)) {
+    // Skill-focused practice (skill page "Practice N items"): the skill is fixed, the band adapts.
+    skill = content.skills.get(slot.skillId)!;
   } else {
     const picked = pickSkill(slot.bucket, { content, states, arch, now, weakestDomainId: cfg.plan.weakestDomainId, history, rand });
     if (!picked) return null;

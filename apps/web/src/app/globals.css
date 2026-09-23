@@ -18,6 +18,8 @@ html, body {
   outline: 2px solid var(--accent-blue);
   outline-offset: 2px;
 }
+/* Regions focused programmatically (to move screen readers) are not controls. */
+[tabindex="-1"]:focus-visible { outline: none; }
 
 /* Mono micro-labels used across every frame: 9px, tracked, uppercase. */
 .label {
@@ -58,4 +60,14 @@ html, body {
 @media print {
   html, body { background: #fff; color: #111; }
   .no-print { display: none !important; }
+}
+
+/* Review sheet and any page printed: light, ink-saving, no chrome (frame 35). */
+@media print {
+  .no-print, header, .desktop-required { display: none !important; }
+  .desktop-only { display: block !important; }
+  html, body { background: #fff !important; color: #111 !important; }
+  .review-sheet * { background: transparent !important; color: #111 !important; border-color: #ccc !important; }
+  .review-sheet .katex { color: #111 !important; }
+  @page { margin: 14mm; }
 }

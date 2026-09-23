@@ -156,3 +156,43 @@ export function Tabs({ items, active }: { items: { href: string; label: string }
     </nav>
   );
 }
+
+/** Focus-surface header: breadcrumb on the left, close on the right (frames 03, 28–31). */
+export function FocusHeader({ crumbs, close = "/home", right }: { crumbs: { href?: string; label: string }[]; close?: string; right?: ReactNode }) {
+  return (
+    <header className="h-14 border-b border-line flex items-center justify-between px-7 no-print">
+      <nav aria-label="Breadcrumb" className="flex items-center gap-[10px] text-[12.5px]">
+        {crumbs.map((c, i) => (
+          <span key={i} className="flex items-center gap-[10px]">
+            {i > 0 ? <span className="text-ink-3">/</span> : null}
+            {c.href ? (
+              <Link href={c.href} className={`text-ink-2 hover:text-ink rounded ${focusRing}`}>
+                {i === 0 ? "← " : ""}
+                {c.label}
+              </Link>
+            ) : (
+              <span className="text-ink font-medium" aria-current="page">{c.label}</span>
+            )}
+          </span>
+        ))}
+      </nav>
+      <div className="flex items-center gap-4">
+        {right}
+        <Link href={close} aria-label="Close" className={`text-ink-3 hover:text-ink text-[18px] leading-none rounded ${focusRing}`}>
+          ×
+        </Link>
+      </div>
+    </header>
+  );
+}
+
+/** Lesson step-type label colours (frames 03, 28–31). */
+export const STEP_TONE: Record<string, string> = {
+  concept: "text-ink-3",
+  interactive: "text-ink-3",
+  worked: "text-ink-3",
+  faded: "text-ink-3",
+  check: "text-working",
+  trap: "text-red",
+  summary: "text-ink-3",
+};

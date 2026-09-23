@@ -241,6 +241,9 @@ function ItemView({ served, loadedAt, verdict, onVerdict, onNext, onEnd, offline
   const [confirmEnd, setConfirmEnd] = useState(false);
   const autoSubmitted = useRef(false);
   const pending = useRef<string>("");
+  const setPending = useCallback((r: string) => {
+    pending.current = r;
+  }, []);
 
   const submit = useCallback(
     async (raw: string, attempt = 0): Promise<void> => {
@@ -323,9 +326,9 @@ function ItemView({ served, loadedAt, verdict, onVerdict, onNext, onEnd, offline
         ) : item.type === "multistep" ? (
           <MultiStep served={served} chips={chips} onVerdict={onVerdict} />
         ) : item.type === "drill" ? (
-          <Drill served={served} chips={chips} onVerdict={onVerdict} remaining={remaining} onRaw={(r) => (pending.current = r)} />
+          <Drill served={served} chips={chips} onVerdict={onVerdict} remaining={remaining} onRaw={setPending} />
         ) : (
-          <SingleAnswer served={served} chips={chips} submitting={submitting} inputError={inputError} onSubmit={(raw) => submit(raw)} onRaw={(r) => (pending.current = r)} />
+          <SingleAnswer served={served} chips={chips} submitting={submitting} inputError={inputError} onSubmit={(raw) => submit(raw)} onRaw={setPending} />
         )}
       </main>
     </div>
@@ -349,10 +352,14 @@ function SingleAnswer({ served, chips, submitting, inputError, onSubmit, onRaw }
   const [raw, setRaw] = useState("");
   const [choice, setChoice] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  useEffect(() => inputRef.current?.focus(), []);
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
   const preview = useMemo(() => (item.type === "symbolic" ? readsAs(raw, item.variables ?? []) : null), [raw, item.type, item.variables]);
   const value = item.type === "mcq" ? choice ?? "" : raw;
-  useEffect(() => onRaw(value), [value, onRaw]);
+  useEffect(() => {
+    onRaw(value);
+  }, [value, onRaw]);
 
   useEffect(() => {
     if (item.type !== "mcq") return;
@@ -426,7 +433,9 @@ function MultiStep({ served, chips, onVerdict }: { served: Served; chips: React.
   const current = results.length;
   const cp = prompts[current];
   const inputRef = useRef<HTMLInputElement>(null);
-  useEffect(() => inputRef.current?.focus(), [current]);
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, [current]);
 
   async function send() {
     setBusy(true);
@@ -508,7 +517,9 @@ function Drill({ served, chips, onVerdict, remaining, onRaw }: { served: Served;
     inputRef.current?.focus();
     shownAt.current = performance.now();
   }, [i]);
-  useEffect(() => onRaw(""), [onRaw]);
+  useEffect(() => {
+    onRaw("");
+  }, [onRaw]);
   const passMark = Math.ceil(drill.count * 0.8);
 
   async function send(value: string) {

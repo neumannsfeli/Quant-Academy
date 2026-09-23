@@ -87,11 +87,20 @@ export function renderInline(text: string): string {
 const SANITIZE: sanitizeHtml.IOptions = {
   allowedTags: [
     ...sanitizeHtml.defaults.allowedTags,
-    "details", "summary", "span", "math", "semantics", "mrow", "mi", "mo", "mn", "msup", "msub", "mfrac", "mtext",
-    "annotation", "svg", "path", "line", "img",
+    "details", "summary", "span", "img", "svg", "path", "line",
+    // KaTeX's MathML branch (screen readers read this, not the HTML).
+    "math", "semantics", "annotation", "mrow", "mi", "mo", "mn", "ms", "mtext", "mspace", "msup", "msub", "msubsup",
+    "mfrac", "msqrt", "mroot", "mover", "munder", "munderover", "mtable", "mtr", "mtd", "mstyle", "mpadded", "menclose",
   ],
-  allowedAttributes: { "*": ["class", "style", "aria-hidden", "xmlns", "width", "height", "viewBox", "d", "encoding"], a: ["href"] },
-  allowedStyles: { "*": { "*": [/.*/] } },
+  allowedAttributes: {
+    "*": ["class", "style", "aria-hidden", "xmlns", "width", "height", "viewBox", "d", "encoding", "preserveAspectRatio",
+      "mathvariant", "stretchy", "fence", "separator", "lspace", "rspace", "accent", "accentunder", "display", "displaystyle",
+      "scriptlevel", "columnalign", "rowspacing", "columnspacing", "linethickness", "minsize", "maxsize", "notation", "x1", "x2", "y1", "y2", "stroke-width"],
+    a: ["href"],
+  },
+  // KaTeX positions every glyph with inline styles; without them fractions and binomials collapse.
+  // Style attributes cannot run script, and the CSP already permits inline styles.
+  parseStyleAttributes: false,
   allowedSchemes: ["https", "mailto"],
 };
 
