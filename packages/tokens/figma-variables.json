@@ -1,0 +1,19 @@
+{
+  "source": "Figma file IlMoWSyoLgsPMBFg0ezWu2, variable collection \"Color\" (exported via get_variable_defs)",
+  "color": {
+    "bg/canvas": "#0a0c10",
+    "bg/inset": "#0d1117",
+    "bg/surface": "#12161f",
+    "bg/elevated": "#1a2029",
+    "border/subtle": "#232b38",
+    "border/strong": "#35415a",
+    "text/primary": "#e8ecf4",
+    "text/secondary": "#99a3b8",
+    "text/muted": "#7a8698",
+    "level/1-familiar": "#838b9c",
+    "level/2-working": "#e2a33c",
+    "level/3-ready": "#3dd68c",
+    "accent/blue": "#5b8cff",
+    "accent/red": "#f2545b"
+  }
+}

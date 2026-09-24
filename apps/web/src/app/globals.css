@@ -1,0 +1,73 @@
+@import "tailwindcss";
+@import "@qa/tokens/tokens.css";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+html, body {
+  background: var(--bg-canvas);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Frame 17 · Interaction states: focus rings are non-negotiable on the runner (product spec §17.4). */
+:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+}
+/* Regions focused programmatically (to move screen readers) are not controls. */
+[tabindex="-1"]:focus-visible { outline: none; }
+
+/* Mono micro-labels used across every frame: 9px, tracked, uppercase. */
+.label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.prose-qa { color: var(--text-secondary); font-size: 15px; line-height: 24px; }
+.prose-qa p { margin: 0 0 12px; }
+.prose-qa strong { color: var(--text-primary); font-weight: 600; }
+.prose-qa h1, .prose-qa h2, .prose-qa h3 { color: var(--text-primary); font-weight: 600; margin: 24px 0 10px; }
+.prose-qa h1 { font-size: 22px; } .prose-qa h2 { font-size: 18px; } .prose-qa h3 { font-size: 15px; }
+.prose-qa ul, .prose-qa ol { margin: 0 0 12px 20px; list-style: disc; }
+.prose-qa ol { list-style: decimal; }
+.prose-qa li { margin: 4px 0; }
+.prose-qa blockquote { border-left: 2px solid var(--accent-blue); padding: 4px 14px; margin: 12px 0; background: var(--bg-inset); border-radius: 0 8px 8px 0; }
+.prose-qa code { font-family: var(--font-mono); font-size: 0.9em; color: var(--text-primary); }
+.prose-qa details { background: var(--bg-inset); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 10px 14px; margin: 12px 0; }
+.prose-qa summary { cursor: pointer; color: var(--text-primary); }
+.prose-qa .katex-display { margin: 14px 0; overflow-x: auto; overflow-y: hidden; }
+.katex { font-size: 1.05em; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+
+/* Product spec §17.1: below 1024 the app shows the desktop-required interstitial. */
+.desktop-only { display: contents; }
+.desktop-required { display: none; }
+@media (max-width: 1023px) {
+  .desktop-only { display: none; }
+  .desktop-required { display: flex; }
+}
+
+@media print {
+  html, body { background: #fff; color: #111; }
+  .no-print { display: none !important; }
+}
+
+/* Review sheet and any page printed: light, ink-saving, no chrome (frame 35). */
+@media print {
+  .no-print, header, .desktop-required { display: none !important; }
+  .desktop-only { display: block !important; }
+  html, body { background: #fff !important; color: #111 !important; }
+  .review-sheet * { background: transparent !important; color: #111 !important; border-color: #ccc !important; }
+  .review-sheet .katex { color: #111 !important; }
+  @page { margin: 14mm; }
+}

@@ -1,0 +1,22 @@
+{
+  "name": "quant-academy",
+  "private": true,
+  "packageManager": "pnpm@10.33.0",
+  "scripts": {
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r --if-present test",
+    "lint:boundaries": "node tools/check-boundaries.mjs",
+    "dev": "pnpm --filter @qa/web dev",
+    "db:migrate": "pnpm --filter @qa/db migrate",
+    "db:seed": "pnpm --filter @qa/db seed",
+    "grader": "cd apps/grader && $(test -x .venv/bin/python && echo .venv/bin/python || echo python3) -m uvicorn grader.main:app --port 8001",
+    "jobs": "pnpm --filter @qa/jobs"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.8",
+    "fast-check": "^3.23.1",
+    "@types/node": "^22.10.0"
+  }
+}

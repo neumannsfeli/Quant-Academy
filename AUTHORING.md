@@ -32,7 +32,7 @@ Requirements:
 - Parameterise every number that can vary without changing the reasoning.
   Aim for at least 20 distinct answers across the parameter space.
 - The answer must be a closed-form expression over the parameters using only:
-  + - * / ^ ( ) floor ceil abs min max sqrt log exp factorial choose mod pi e
+  + - * / ^ ( ) floor ceil abs min max sqrt log exp factorial choose mod harmonic pi e
   (no sum, no conditionals — derive a closed form instead)
 - Every distractor or near-miss must be the result of a SPECIFIC named error
   from the list above. Do not invent plausible-looking wrong numbers.
@@ -144,6 +144,9 @@ Building one real template per type surfaced six gaps between the specs and prac
 | 4 | The expression whitelist had no `mod`, so excluding multiples of 10 needed `x - 10*floor(x/10)`. E[max] of dice needs a closed form for a sum of powers | **Applied:** `mod` added to the grammar in tech spec §7 and in `validate.py`. `sum` stays out deliberately — it forces authors to find the closed form |
 | 5 | MCQ collisions must be checked **at display precision**. Two options that differ in the fourth decimal place render identically at "93%" | Collision check runs on rendered strings, as `validate.py` does |
 | 6 | Drills have no top-level instruction text | `stem` is required on every type; for drills it is the instruction line above the set |
+| 7 | Coupon-collector and record-count answers are sums of reciprocals, which the no-`sum` rule made inexpressible | **Applied:** `harmonic(n)` (the n-th harmonic number) added to the grammar in `packages/items`, the grader and `exprlang.py`. It is still a closed form from the author's point of view |
+| 8 | Learners type products the way they write them — `kN - k^2`, `2p` — and the Figma runner shows these as accepted | **Applied:** symbolic answers accept implicit multiplication between a number and a name (`2p` → `2*p`) and between single-letter variables in scope (`kN` → `k*N`). The "reads as" line shows the expansion before submit. Multi-letter names are never split |
+| 9 | Parameters named `pi` or `e` silently shadowed the constants, so answers changed meaning | **Applied:** the sweep fails a template with `RESERVED_NAME` when a parameter shadows a constant or function |
 
 ## Tracking throughput
 
