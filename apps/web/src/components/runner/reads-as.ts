@@ -15,7 +15,9 @@ export function readsAs(src: string, variables: string[]): { ok: true; html: str
   let rpn: Rpn;
   try {
     // Implicit multiplication like 2n or k(N-k) is accepted by the grader; mirror it here.
-    const normalised = src
+    // C(n, k) means choose(n, k) unless C is itself a variable (mirrors the grader's alias).
+    const aliased = variables.includes("C") ? src : src.replace(/\bC\s*\(/g, "choose(");
+    const normalised = aliased
       // kN → k*N when kN is not a name and each letter is a declared variable (mirrors the grader).
       .replace(/[A-Za-z_][A-Za-z0-9_]*/g, (id) => (!variables.includes(id) && !FUNCS.has(id) && id.length > 1 && [...id].every((c) => variables.includes(c)) ? [...id].join("*") : id))
       .replace(/(\d)\s*([A-Za-z(])/g, "$1*$2")

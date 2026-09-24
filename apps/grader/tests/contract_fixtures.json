@@ -17,5 +17,8 @@
   {"submitted": "y + 1", "answer": "x + 1", "variables": ["x"], "assumptions": {}, "expect_error": "PARSE_ERROR"},
   {"submitted": "1/(1-p)", "answer": "1/(1-p)", "variables": ["p"], "assumptions": {"p":"probability"}, "correct": true},
   {"submitted": "(1-p)/p", "answer": "1/p", "variables": ["p"], "assumptions": {"p":"probability"}, "correct": false},
-  {"submitted": "N*H", "answer": "N*H", "variables": ["N","H"], "assumptions": {}, "correct": true}
+  {"submitted": "N*H", "answer": "N*H", "variables": ["N","H"], "assumptions": {}, "correct": true},
+  {"submitted": "C(n, 2)", "answer": "n*(n - 1)/2", "variables": ["n"], "assumptions": {"n":"positive integer"}, "correct": true},
+  {"submitted": "C(n,k) - C(n-s,k)", "answer": "choose(n, k) - choose(n - s, k)", "variables": ["n","k","s"], "assumptions": {}, "correct": true},
+  {"submitted": "C*r", "answer": "r*C", "variables": ["C","r"], "assumptions": {}, "correct": true}
 ]

@@ -60,6 +60,8 @@ FUNCTIONS = {
     "cos": sp.cos,
 }
 CONSTANTS = {"pi": sp.pi, "e": sp.E, "E": sp.E}
+# C(n, k) is the notation most learners type; it is a function unless C is a declared variable.
+ALIASES = {"C": sp.binomial}
 
 
 class GradeError(Exception):
@@ -139,10 +141,11 @@ def parse(src: str, symbols: dict[str, sp.Symbol]) -> sp.Expr:
     if _depth(src) > MAX_DEPTH:
         raise GradeError("PARSE_ERROR", "expression too deeply nested")
     src = split_implicit(src, symbols)
+    functions = {**FUNCTIONS, **{k: v for k, v in ALIASES.items() if k not in symbols}}
     for ident in re.findall(r"[A-Za-z_][A-Za-z0-9_]*", src):
-        if ident not in symbols and ident not in FUNCTIONS and ident not in CONSTANTS:
+        if ident not in symbols and ident not in functions and ident not in CONSTANTS:
             raise GradeError("PARSE_ERROR", f'"{ident}" is not one of the allowed variables')
-    namespace = {**FUNCTIONS, **CONSTANTS, **symbols}
+    namespace = {**functions, **CONSTANTS, **symbols}
     try:
         expr = parse_expr(
             src,
