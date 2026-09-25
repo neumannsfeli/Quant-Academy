@@ -85,8 +85,8 @@ The core tests reset `quant_academy_test` and seed it from the curriculum bundle
 
 ## Deployment
 
-The tech spec describes two targets that share this code: Option A (Vercel + Lambda + RDS) and
-Option B (containers + SQS). The web app builds as a Next.js standalone server
-(`pnpm --filter @qa/web build`); `apps/jobs/src/handler.ts` is the job entry point and
-`SCHEDULES` in the same file lists the production schedules. The grader is a plain ASGI app.
-Infrastructure-as-code is not in this repository yet.
+`infra/quant-academy.yaml` is a CloudFormation template for the launch size: one Graviton
+instance running the web app, grader, jobs scheduler, Postgres and Caddy under Docker Compose,
+at roughly $15 a month. Merges to `main` build the images in GitHub Actions and roll the
+instance. Setup, costs, operations and the path to the tech spec's larger options are in
+[deploy/README.md](deploy/README.md).

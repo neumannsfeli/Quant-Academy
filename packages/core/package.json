@@ -5,12 +5,16 @@
   "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",
-  "exports": { ".": "./src/index.ts", "./*": "./src/*.ts" },
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  },
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@aws-sdk/client-sesv2": "^3.1140.0",
     "@qa/db": "workspace:*",
     "@qa/items": "workspace:*",
     "@qa/learning": "workspace:*",

@@ -1,0 +1,69 @@
+# The whole production stack on one host (see deploy/README.md).
+# Images are pulled from ECR by commit tag; compose.env and /opt/qa/app.env are written by deploy.sh.
+# Everything the app writes lives in Postgres under /data, which is a separate EBS volume.
+name: qa
+
+x-app: &app
+  restart: unless-stopped
+  env_file: /opt/qa/app.env
+
+services:
+  postgres:
+    image: public.ecr.aws/docker/library/postgres:16-alpine
+    restart: unless-stopped
+    env_file: /opt/qa/app.env
+    command: >-
+      postgres -c shared_buffers=128MB -c effective_cache_size=512MB -c work_mem=4MB
+      -c max_connections=40 -c log_min_duration_statement=500
+    volumes:
+      - /data/postgres:/var/lib/postgresql/data
+    shm_size: 128mb
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  grader:
+    <<: *app
+    image: ${REGISTRY}/${APP_NAME}/grader:${IMAGE_TAG}
+
+  web:
+    <<: *app
+    image: ${REGISTRY}/${APP_NAME}/web:${IMAGE_TAG}
+    depends_on:
+      postgres: { condition: service_healthy }
+      grader: { condition: service_healthy }
+
+  # The job scheduler: one process, outside the web container (tech spec §4).
+  jobs:
+    <<: *app
+    image: ${REGISTRY}/${APP_NAME}/ops:${IMAGE_TAG}
+    command: ["jobs", "schedule"]
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  caddy:
+    image: public.ecr.aws/docker/library/caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - /data/caddy:/data
+    depends_on:
+      web: { condition: service_healthy }
+
+  # One-off tasks: `qa run --rm ops migrate`, `qa run --rm ops seed`, `qa run --rm ops jobs once sweeper`
+  ops:
+    <<: *app
+    image: ${REGISTRY}/${APP_NAME}/ops:${IMAGE_TAG}
+    restart: "no"
+    profiles: ["ops"]
+    depends_on:
+      postgres: { condition: service_healthy }

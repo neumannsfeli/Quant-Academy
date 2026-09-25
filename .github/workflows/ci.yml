@@ -1,0 +1,79 @@
+# Typecheck, unit and service tests, the grader's contract tests, and an image build.
+# The core tests seed from the curriculum's built pack, which needs the CURRICULUM_TOKEN secret.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  typescript:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: qa
+          POSTGRES_PASSWORD: qa
+          POSTGRES_DB: quant_academy_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U qa" --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: neumannsfeli/Quant-Academy-Curriculum-
+          ref: ${{ vars.CURRICULUM_REF || 'main' }}
+          token: ${{ secrets.CURRICULUM_TOKEN }}
+          path: curriculum
+          sparse-checkout: dist
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm lint:boundaries
+      - run: pnpm test
+        env:
+          TEST_DATABASE_URL: postgres://qa:qa@localhost:5432/quant_academy_test
+          CONTENT_BUNDLE: ${{ github.workspace }}/curriculum/dist/content.json
+
+  grader:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: apps/grader/requirements*.txt
+      - run: pip install -r apps/grader/requirements-dev.txt
+      - run: python -m pytest -q
+        working-directory: apps/grader
+
+  images:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: web
+          platforms: linux/arm64
+          cache-from: type=gha,scope=web
+      - uses: docker/build-push-action@v6
+        with:
+          context: apps/grader
+          platforms: linux/arm64
+          cache-from: type=gha,scope=grader

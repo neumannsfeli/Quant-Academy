@@ -1,0 +1,632 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  Quant Academy, launch size: one Graviton instance running the web app, grader, jobs,
+  Postgres and Caddy (TLS) under Docker Compose, with SES for email, ECR for images,
+  nightly S3 backups, daily EBS snapshots and a GitHub Actions deploy role. See deploy/README.md.
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label: { default: Site }
+        Parameters: [DomainName, HostedZoneId, MailFrom, SupportEmail, ServeUnreviewedContent]
+      - Label: { default: Size }
+        Parameters: [InstanceType, ImageId, DataVolumeSize]
+      - Label: { default: Deploys }
+        Parameters: [GitHubRepository, GitHubBranch, CreateGitHubOidcProvider]
+      - Label: { default: Alerts }
+        Parameters: [AlertEmail, MonthlyBudgetUsd]
+      - Label: { default: Naming }
+        Parameters: [AppName]
+
+Parameters:
+  AppName:
+    Type: String
+    Default: quant-academy
+    AllowedPattern: "^[a-z][a-z0-9-]{1,30}$"
+    Description: Prefix for the ECR repositories, the log group and the SSM parameter path. Use a different one per environment (e.g. quant-academy-staging).
+  DomainName:
+    Type: String
+    AllowedPattern: "^[a-z0-9.-]+\\.[a-z]{2,}$"
+    Description: The site's hostname, e.g. quantacademy.co.uk. HTTPS is issued for it automatically once DNS points at the instance.
+  HostedZoneId:
+    Type: String
+    Default: ""
+    Description: Optional. A Route 53 hosted zone for the domain; if given, the A record and the SES DKIM records are created for you. Leave empty to add them at your DNS provider from the stack outputs.
+  MailFrom:
+    Type: String
+    Default: ""
+    Description: 'Optional. The From header, e.g. "Quant Academy <hello@quantacademy.co.uk>". Defaults to Quant Academy <hello@DomainName>. Its domain must be DomainName (the SES identity).'
+  SupportEmail:
+    Type: String
+    Default: ""
+    Description: Optional. Reply-To address and the Let's Encrypt contact. Defaults to support@DomainName.
+  ServeUnreviewedContent:
+    Type: String
+    Default: "false"
+    AllowedValues: ["false", "true"]
+    Description: >-
+      Production serves only templates a reviewer has promoted to live (admin console → Review).
+      Set true for a beta that serves in_review templates too. Can be flipped later without a
+      stack update via the SSM parameter /<AppName>/SERVE_UNREVIEWED_CONTENT and a redeploy.
+  InstanceType:
+    Type: String
+    Default: t4g.micro
+    AllowedValues: [t4g.micro, t4g.small, t4g.medium, t4g.large]
+    Description: >-
+      The whole stack idles at about 330 MB and peaks near 500 MB during a deploy, so t4g.micro
+      (1 GB plus 2 GB swap) is enough at launch. Changing size later is a stop/start of about a
+      minute; the data volume stays attached. Move up when the CPU-credit alarm fires.
+  ImageId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64
+    Description: Amazon Linux 2023 (arm64). A new AMI replaces the instance; the data volume is carried over and the last release redeployed.
+  DataVolumeSize:
+    Type: Number
+    Default: 10
+    MinValue: 5
+    MaxValue: 500
+    Description: GiB for Postgres and TLS state. It can be grown later without downtime.
+  GitHubRepository:
+    Type: String
+    Default: neumannsfeli/Quant-Academy
+    Description: owner/repo allowed to deploy through GitHub Actions OIDC. Leave empty to skip creating the deploy role.
+  GitHubBranch:
+    Type: String
+    Default: main
+    Description: Only workflows running on this branch can assume the deploy role.
+  CreateGitHubOidcProvider:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: Set false if this AWS account already has the token.actions.githubusercontent.com identity provider (only one may exist per account).
+  AlertEmail:
+    Type: String
+    Default: ""
+    Description: Optional. Receives alarms (instance health, CPU credits) and the monthly budget alert. Confirm the subscription email AWS sends.
+  MonthlyBudgetUsd:
+    Type: Number
+    Default: 30
+    Description: Account-wide monthly cost budget; alerts at 80% actual and 100% forecast. Only created when AlertEmail is set.
+
+Conditions:
+  HasHostedZone: !Not [!Equals [!Ref HostedZoneId, ""]]
+  HasMailFrom: !Not [!Equals [!Ref MailFrom, ""]]
+  HasSupportEmail: !Not [!Equals [!Ref SupportEmail, ""]]
+  HasGitHub: !Not [!Equals [!Ref GitHubRepository, ""]]
+  CreateOidcProvider: !And [!Condition HasGitHub, !Equals [!Ref CreateGitHubOidcProvider, "true"]]
+  HasAlerts: !Not [!Equals [!Ref AlertEmail, ""]]
+
+Resources:
+  # ── Network: one public subnet, no NAT (the instance has an Elastic IP) ─────────────────
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.40.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags: [{ Key: Name, Value: !Ref AppName }]
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+  GatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref Vpc
+      InternetGatewayId: !Ref InternetGateway
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.40.0.0/24
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      Tags: [{ Key: Name, Value: !Sub "${AppName}-public" }]
+  RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+  DefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: GatewayAttachment
+    Properties:
+      RouteTableId: !Ref RouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+  SubnetRouteTable:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref RouteTable
+  WebSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: HTTP and HTTPS in; no SSH (use SSM Session Manager)
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - { IpProtocol: tcp, FromPort: 80, ToPort: 80, CidrIp: 0.0.0.0/0, Description: HTTP (redirects to HTTPS; ACME) }
+        - { IpProtocol: tcp, FromPort: 443, ToPort: 443, CidrIp: 0.0.0.0/0, Description: HTTPS }
+        - { IpProtocol: udp, FromPort: 443, ToPort: 443, CidrIp: 0.0.0.0/0, Description: HTTP/3 }
+
+  # ── Storage ─────────────────────────────────────────────────────────────────────────────
+  # Postgres, TLS certificates and the host's generated secrets. Separate from the instance
+  # so that replacing the instance (a new AMI, a bigger size) keeps the data.
+  DataVolume:
+    Type: AWS::EC2::Volume
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      AvailabilityZone: !GetAtt PublicSubnet.AvailabilityZone
+      Size: !Ref DataVolumeSize
+      VolumeType: gp3
+      Encrypted: true
+      Tags:
+        - { Key: Name, Value: !Sub "${AppName}-data" }
+        - { Key: qa-stack, Value: !Ref AWS::StackName }
+        - { Key: qa-snapshot, Value: !Ref AWS::StackName }
+
+  Bucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }
+      LifecycleConfiguration:
+        Rules:
+          - { Id: backups, Status: Enabled, Prefix: backups/, ExpirationInDays: 35 }
+          - { Id: releases, Status: Enabled, Prefix: releases/, ExpirationInDays: 180 }
+  BucketTlsOnly:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref Bucket
+      PolicyDocument:
+        Statement:
+          - Effect: Deny
+            Principal: "*"
+            Action: s3:*
+            Resource: [!GetAtt Bucket.Arn, !Sub "${Bucket.Arn}/*"]
+            Condition: { Bool: { aws:SecureTransport: "false" } }
+
+  WebRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub "${AppName}/web"
+      EmptyOnDelete: true
+      LifecyclePolicy:
+        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"description":"keep the last 10 images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":10},"action":{"type":"expire"}}]}'
+  GraderRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub "${AppName}/grader"
+      EmptyOnDelete: true
+      LifecyclePolicy:
+        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"description":"keep the last 10 images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":10},"action":{"type":"expire"}}]}'
+  OpsRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub "${AppName}/ops"
+      EmptyOnDelete: true
+      LifecyclePolicy:
+        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"description":"keep the last 10 images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":10},"action":{"type":"expire"}}]}'
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/${AppName}/containers"
+      RetentionInDays: 14
+
+  # ── Email ───────────────────────────────────────────────────────────────────────────────
+  # New SES accounts are in the sandbox (only verified recipients). Request production
+  # access in the SES console as soon as the stack exists — it takes a day or two.
+  EmailIdentity:
+    Type: AWS::SES::EmailIdentity
+    Properties:
+      EmailIdentity: !Ref DomainName
+  DkimRecord1:
+    Type: AWS::Route53::RecordSet
+    Condition: HasHostedZone
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !GetAtt EmailIdentity.DkimDNSTokenName1
+      Type: CNAME
+      TTL: "3600"
+      ResourceRecords: [!GetAtt EmailIdentity.DkimDNSTokenValue1]
+  DkimRecord2:
+    Type: AWS::Route53::RecordSet
+    Condition: HasHostedZone
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !GetAtt EmailIdentity.DkimDNSTokenName2
+      Type: CNAME
+      TTL: "3600"
+      ResourceRecords: [!GetAtt EmailIdentity.DkimDNSTokenValue2]
+  DkimRecord3:
+    Type: AWS::Route53::RecordSet
+    Condition: HasHostedZone
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !GetAtt EmailIdentity.DkimDNSTokenName3
+      Type: CNAME
+      TTL: "3600"
+      ResourceRecords: [!GetAtt EmailIdentity.DkimDNSTokenValue3]
+
+  # ── The instance ────────────────────────────────────────────────────────────────────────
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ec2.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore # Run Command (deploys) and Session Manager (shell)
+        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+      Policies:
+        - PolicyName: app
+          PolicyDocument:
+            Statement:
+              - Sid: SendEmail
+                Effect: Allow
+                Action: [ses:SendEmail, ses:SendRawEmail]
+                Resource: !Sub "arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/*"
+              - Sid: ReleasesAndBackups
+                Effect: Allow
+                Action: [s3:GetObject, s3:PutObject]
+                Resource: !Sub "${Bucket.Arn}/*"
+              - Sid: ListBucket
+                Effect: Allow
+                Action: s3:ListBucket
+                Resource: !GetAtt Bucket.Arn
+              - Sid: Settings
+                Effect: Allow
+                Action: [ssm:GetParametersByPath, ssm:GetParameter, ssm:GetParameters]
+                Resource:
+                  - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${AppName}"
+                  - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${AppName}/*"
+              - Sid: Logs
+                Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !Sub "${LogGroup.Arn}:*"
+              - Sid: DescribeVolume
+                Effect: Allow
+                Action: ec2:DescribeVolumes
+                Resource: "*"
+              - Sid: AttachDataVolume # only this stack's volume, only to this stack's instances
+                Effect: Allow
+                Action: ec2:AttachVolume
+                Resource:
+                  - !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:volume/${DataVolume}"
+                  - !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:instance/*"
+                Condition:
+                  StringEquals: { aws:ResourceTag/qa-stack: !Ref AWS::StackName }
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles: [!Ref InstanceRole]
+
+  Instance:
+    Type: AWS::EC2::Instance
+    DependsOn: DefaultRoute
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: !Ref ImageId
+      IamInstanceProfile: !Ref InstanceProfile
+      SubnetId: !Ref PublicSubnet
+      SecurityGroupIds: [!Ref WebSecurityGroup]
+      MetadataOptions:
+        HttpTokens: required
+        HttpPutResponseHopLimit: 2 # containers reach the instance role through IMDS
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs: { VolumeSize: 20, VolumeType: gp3, Encrypted: true, DeleteOnTermination: true }
+      Tags:
+        - { Key: Name, Value: !Ref AppName }
+        - { Key: qa-stack, Value: !Ref AWS::StackName }
+      UserData:
+        Fn::Base64: !Sub |
+            #!/bin/bash
+            # First boot only. Everything after this is deploy/deploy.sh, run by qa-deploy.
+            set -euxo pipefail
+            exec > >(tee -a /var/log/qa-bootstrap.log) 2>&1
+
+            # The instance has no public address until the Elastic IP attaches.
+            until curl -sf -m 5 -o /dev/null https://checkip.amazonaws.com; do sleep 5; done
+
+            # Docker, the Compose plugin and 2 GB of swap
+            dnf install -y docker
+            mkdir -p /usr/local/lib/docker/cli-plugins
+            curl -fsSL -o /usr/local/lib/docker/cli-plugins/docker-compose \
+              "https://github.com/docker/compose/releases/download/v2.29.7/docker-compose-linux-$(uname -m)"
+            chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+            if [ ! -f /swapfile ]; then
+              dd if=/dev/zero of=/swapfile bs=1M count=2048 && chmod 600 /swapfile && mkswap /swapfile
+              echo '/swapfile swap swap defaults 0 0' >> /etc/fstab
+            fi
+            swapon -a
+
+            # The data volume. A replacement instance waits until CloudFormation has terminated
+            # the old one and the volume is free.
+            IMDS=$(curl -sX PUT http://169.254.169.254/latest/api/token -H 'X-aws-ec2-metadata-token-ttl-seconds: 300')
+            INSTANCE_ID=$(curl -s -H "X-aws-ec2-metadata-token: $IMDS" http://169.254.169.254/latest/meta-data/instance-id)
+            VOLUME=${DataVolume}
+            DEV=/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_$(echo "$VOLUME" | sed 's/-//')
+            until [ -e "$DEV" ]; do
+              state=$(aws ec2 describe-volumes --region ${AWS::Region} --volume-ids "$VOLUME" --query 'Volumes[0].State' --output text || true)
+              if [ "$state" = available ]; then
+                aws ec2 attach-volume --region ${AWS::Region} --volume-id "$VOLUME" --instance-id "$INSTANCE_ID" --device /dev/sdf || true
+              fi
+              sleep 10
+            done
+            blkid "$DEV" || mkfs.xfs "$DEV"
+            mkdir -p /data
+            grep -q ' /data ' /etc/fstab || echo "$DEV /data xfs defaults,nofail 0 2" >> /etc/fstab
+            mount -a
+            mkdir -p /data/postgres /data/caddy
+
+            # Secrets that never leave the host; the data volume keeps them across replacements.
+            if [ ! -f /data/secrets.env ]; then
+              (umask 077; printf 'AUTH_SECRET=%s\nPOSTGRES_PASSWORD=%s\n' \
+                "$(openssl rand -base64 48 | tr -d '\n')" "$(openssl rand -hex 24)" > /data/secrets.env)
+            fi
+
+            # Site settings live in the stack's SSM parameter; qa-deploy re-reads them on every
+            # deploy, so a stack update takes effect at the next deploy.
+            mkdir -p /opt/qa/releases
+            aws ssm get-parameter --region ${AWS::Region} --name '${StackConfig}' --query Parameter.Value --output text > /opt/qa/config.env
+
+            # Container logs go to CloudWatch; Docker starts only once /data is mounted.
+            mkdir -p /etc/docker /etc/systemd/system/docker.service.d
+            cat > /etc/docker/daemon.json <<'JSON'
+            {"log-driver": "awslogs", "log-opts": {"awslogs-region": "${AWS::Region}", "awslogs-group": "${LogGroup}", "tag": "{{.Name}}", "mode": "non-blocking"}}
+            JSON
+            printf '[Unit]\nRequiresMountsFor=/data\n' > /etc/systemd/system/docker.service.d/data.conf
+            systemctl daemon-reload
+            systemctl enable --now docker
+
+            # qa: docker compose on the current release (qa ps, qa logs web, qa run --rm ops seed)
+            cat > /usr/local/bin/qa <<'SH'
+            #!/bin/bash
+            exec docker compose --project-directory /opt/qa/current -f /opt/qa/current/compose.yaml --env-file /opt/qa/current/compose.env "$@"
+            SH
+            # qa-deploy <tag>: fetch a release's deploy files from S3 and roll the stack to it
+            cat > /usr/local/bin/qa-deploy <<'SH'
+            #!/bin/bash
+            set -euo pipefail
+            aws ssm get-parameter --region ${AWS::Region} --name '${StackConfig}' --query Parameter.Value --output text > /opt/qa/config.env
+            source /opt/qa/config.env
+            TAG=$1
+            DIR=/opt/qa/releases/$TAG
+            aws s3 cp --recursive --only-show-errors --region "$AWS_REGION" "s3://$BUCKET/releases/$TAG/" "$DIR/"
+            chmod +x "$DIR"/*.sh
+            exec "$DIR/deploy.sh" "$TAG"
+            SH
+            chmod +x /usr/local/bin/qa /usr/local/bin/qa-deploy
+
+            cat > /etc/systemd/system/qa-backup.service <<'UNIT'
+            [Unit]
+            Description=Quant Academy nightly database backup to S3
+            ConditionPathExists=/opt/qa/current/backup.sh
+            [Service]
+            Type=oneshot
+            ExecStart=/opt/qa/current/backup.sh
+            UNIT
+            cat > /etc/systemd/system/qa-backup.timer <<'UNIT'
+            [Unit]
+            Description=Nightly database backup
+            [Timer]
+            OnCalendar=*-*-* 02:30:00 UTC
+            Persistent=true
+            [Install]
+            WantedBy=timers.target
+            UNIT
+            systemctl daemon-reload
+            systemctl enable --now qa-backup.timer
+
+            # A replacement instance picks up the release the last one was running.
+            if [ -f /data/current-release ]; then /usr/local/bin/qa-deploy "$(cat /data/current-release)"; fi
+            echo "bootstrap complete"
+
+  # Site settings for deploy.sh and backup.sh (sourced by bash, so values are single-quoted).
+  StackConfig:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/${AppName}/stack/config"
+      Type: String
+      Description: Written by CloudFormation; edit the stack parameters, not this.
+      Value: !Sub
+        - |
+          APP_NAME='${AppName}'
+          AWS_REGION='${AWS::Region}'
+          REGISTRY='${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com'
+          BUCKET='${Bucket}'
+          DOMAIN='${DomainName}'
+          MAIL_FROM='${From}'
+          SUPPORT_EMAIL='${Support}'
+          SERVE_UNREVIEWED_CONTENT='${ServeUnreviewedContent}'
+          SSM_PATH='/${AppName}'
+        - From: !If [HasMailFrom, !Ref MailFrom, !Sub "Quant Academy <hello@${DomainName}>"]
+          Support: !If [HasSupportEmail, !Ref SupportEmail, !Sub "support@${DomainName}"]
+
+  ElasticIp:
+    Type: AWS::EC2::EIP
+    DependsOn: GatewayAttachment
+    Properties:
+      Domain: vpc
+      InstanceId: !Ref Instance
+      Tags: [{ Key: Name, Value: !Ref AppName }]
+  SiteRecord:
+    Type: AWS::Route53::RecordSet
+    Condition: HasHostedZone
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref DomainName
+      Type: A
+      TTL: "300"
+      ResourceRecords: [!Ref ElasticIp]
+
+  # ── Snapshots: the data volume daily, seven kept ────────────────────────────────────────
+  SnapshotRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal: { Service: dlm.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns: [arn:aws:iam::aws:policy/service-role/AWSDataLifecycleManagerServiceRole]
+  SnapshotPolicy:
+    Type: AWS::DLM::LifecyclePolicy
+    Properties:
+      Description: !Sub "${AppName} data volume daily"
+      State: ENABLED
+      ExecutionRoleArn: !GetAtt SnapshotRole.Arn
+      PolicyDetails:
+        ResourceTypes: [VOLUME]
+        TargetTags: [{ Key: qa-snapshot, Value: !Ref AWS::StackName }]
+        Schedules:
+          - Name: daily
+            CreateRule: { Interval: 24, IntervalUnit: HOURS, Times: ["03:30"] }
+            RetainRule: { Count: 7 }
+            CopyTags: true
+
+  # ── GitHub Actions deploys (OIDC, no stored AWS keys) ───────────────────────────────────
+  GitHubOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: CreateOidcProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList: [sts.amazonaws.com]
+      ThumbprintList: [6938fd4d98bab03faadb97b34396831e3780aea1, 1c58a3a8518e8759bf075b76b750d4f2df264fcd]
+  DeployRole:
+    Type: AWS::IAM::Role
+    Condition: HasGitHub
+    Properties:
+      Description: Assumed by GitHub Actions to push images and roll the instance
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Sub "arn:aws:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com"
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubRepository}:ref:refs/heads/${GitHubBranch}"
+      Policies:
+        - PolicyName: deploy
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:BatchGetImage
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:InitiateLayerUpload
+                  - ecr:UploadLayerPart
+                  - ecr:CompleteLayerUpload
+                  - ecr:PutImage
+                  - ecr:DescribeImages
+                Resource: [!GetAtt WebRepository.Arn, !GetAtt GraderRepository.Arn, !GetAtt OpsRepository.Arn]
+              - Effect: Allow
+                Action: s3:PutObject
+                Resource: !Sub "${Bucket.Arn}/releases/*"
+              - Effect: Allow
+                Action: ssm:SendCommand
+                Resource:
+                  - !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:instance/${Instance}"
+                  - !Sub "arn:aws:ssm:${AWS::Region}::document/AWS-RunShellScript"
+              - Effect: Allow
+                Action: [ssm:GetCommandInvocation, ssm:ListCommandInvocations]
+                Resource: "*"
+              - Effect: Allow
+                Action: cloudformation:DescribeStacks
+                Resource: !Ref AWS::StackId
+
+  # ── Alerts ──────────────────────────────────────────────────────────────────────────────
+  AlertTopic:
+    Type: AWS::SNS::Topic
+    Condition: HasAlerts
+    Properties:
+      Subscription: [{ Protocol: email, Endpoint: !Ref AlertEmail }]
+  InstanceCheckAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: HasAlerts
+    Properties:
+      AlarmDescription: The instance failed its status check (EC2 recovers system failures on its own; this one needs a reboot)
+      Namespace: AWS/EC2
+      MetricName: StatusCheckFailed
+      Dimensions: [{ Name: InstanceId, Value: !Ref Instance }]
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 5
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      AlarmActions: [!Ref AlertTopic]
+      OKActions: [!Ref AlertTopic]
+  CpuCreditAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: HasAlerts
+    Properties:
+      AlarmDescription: Sustained CPU is spending burst credits; time for a bigger instance
+      Namespace: AWS/EC2
+      MetricName: CPUCreditBalance
+      Dimensions: [{ Name: InstanceId, Value: !Ref Instance }]
+      Statistic: Minimum
+      Period: 300
+      EvaluationPeriods: 3
+      Threshold: 20
+      ComparisonOperator: LessThanThreshold
+      AlarmActions: [!Ref AlertTopic]
+  Budget:
+    Type: AWS::Budgets::Budget
+    Condition: HasAlerts
+    Properties:
+      Budget:
+        BudgetName: !Sub "${AppName}-monthly"
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit: { Amount: !Ref MonthlyBudgetUsd, Unit: USD }
+      NotificationsWithSubscribers:
+        - Notification: { NotificationType: ACTUAL, ComparisonOperator: GREATER_THAN, Threshold: 80 }
+          Subscribers: [{ SubscriptionType: EMAIL, Address: !Ref AlertEmail }]
+        - Notification: { NotificationType: FORECASTED, ComparisonOperator: GREATER_THAN, Threshold: 100 }
+          Subscribers: [{ SubscriptionType: EMAIL, Address: !Ref AlertEmail }]
+
+Outputs:
+  PublicIp:
+    Description: Point the domain's A record here (done for you when HostedZoneId is set)
+    Value: !Ref ElasticIp
+  InstanceId:
+    Value: !Ref Instance
+  Bucket:
+    Value: !Ref Bucket
+  Registry:
+    Value: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com"
+  AppName:
+    Value: !Ref AppName
+  DeployRoleArn:
+    Condition: HasGitHub
+    Description: Set as the AWS_DEPLOY_ROLE_ARN variable in the GitHub repository
+    Value: !GetAtt DeployRole.Arn
+  DkimRecords:
+    Description: Three CNAME records for SES (added for you when HostedZoneId is set)
+    Value: !Sub
+      - "${N1} CNAME ${V1} | ${N2} CNAME ${V2} | ${N3} CNAME ${V3}"
+      - N1: !GetAtt EmailIdentity.DkimDNSTokenName1
+        V1: !GetAtt EmailIdentity.DkimDNSTokenValue1
+        N2: !GetAtt EmailIdentity.DkimDNSTokenName2
+        V2: !GetAtt EmailIdentity.DkimDNSTokenValue2
+        N3: !GetAtt EmailIdentity.DkimDNSTokenName3
+        V3: !GetAtt EmailIdentity.DkimDNSTokenValue3
+  Shell:
+    Description: A root shell on the instance, no SSH needed
+    Value: !Sub "aws ssm start-session --region ${AWS::Region} --target ${Instance}"

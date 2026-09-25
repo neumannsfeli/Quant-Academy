@@ -45,9 +45,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     },
   },
   callbacks: {
+    // With database sessions the default payload carries the session token and the whole
+    // user row; /api/auth/session is readable by page scripts, so send only what a page needs.
     session({ session, user }) {
-      session.user.id = user.id;
-      return session;
+      return { expires: session.expires, user: { id: user.id, email: user.email, name: user.name ?? null, image: user.image ?? null } } as typeof session;
     },
   },
 });

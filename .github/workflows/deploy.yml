@@ -1,0 +1,118 @@
+# Build the three images, push them to ECR and roll the instance (deploy/README.md).
+# Repository variables: AWS_REGION, AWS_DEPLOY_ROLE_ARN (a stack output), STACK_NAME.
+# Repository secret: CURRICULUM_TOKEN, read access to the private curriculum repository.
+# Until AWS_DEPLOY_ROLE_ARN is set, this workflow does nothing.
+name: deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Redeploy an earlier release (a full commit SHA already built) instead of building this commit
+        required: false
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: vars.AWS_DEPLOY_ROLE_ARN != ''
+    # The instance is Graviton (arm64); GitHub's arm64 runners build natively.
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 40
+    env:
+      TAG: ${{ inputs.tag || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.sha }}
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Read the stack's outputs
+        run: |
+          aws cloudformation describe-stacks --stack-name "${{ vars.STACK_NAME }}" \
+            --query 'Stacks[0].Outputs[].[OutputKey,OutputValue]' --output text |
+            while IFS=$'\t' read -r key value; do
+              case "$key" in InstanceId|Bucket|Registry|AppName) echo "$key=$value" >> "$GITHUB_ENV" ;; esac
+            done
+
+      - uses: actions/checkout@v4
+        if: inputs.tag == ''
+        with:
+          repository: neumannsfeli/Quant-Academy-Curriculum-
+          ref: ${{ vars.CURRICULUM_REF || 'main' }}
+          token: ${{ secrets.CURRICULUM_TOKEN }}
+          path: curriculum
+          sparse-checkout: dist
+
+      - uses: aws-actions/amazon-ecr-login@v2
+        if: inputs.tag == ''
+      - uses: docker/setup-buildx-action@v3
+        if: inputs.tag == ''
+
+      - name: Build and push web
+        if: inputs.tag == ''
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: web
+          platforms: linux/arm64
+          push: true
+          tags: ${{ env.Registry }}/${{ env.AppName }}/web:${{ env.TAG }}
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,scope=web,mode=max
+      - name: Build and push ops
+        if: inputs.tag == ''
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: ops
+          build-contexts: content=curriculum/dist
+          platforms: linux/arm64
+          push: true
+          tags: ${{ env.Registry }}/${{ env.AppName }}/ops:${{ env.TAG }}
+          cache-from: type=gha,scope=ops
+          cache-to: type=gha,scope=ops,mode=max
+      - name: Build and push grader
+        if: inputs.tag == ''
+        uses: docker/build-push-action@v6
+        with:
+          context: apps/grader
+          platforms: linux/arm64
+          push: true
+          tags: ${{ env.Registry }}/${{ env.AppName }}/grader:${{ env.TAG }}
+          cache-from: type=gha,scope=grader
+          cache-to: type=gha,scope=grader,mode=max
+
+      - name: Upload the release's deploy files
+        if: inputs.tag == ''
+        run: aws s3 cp --recursive --only-show-errors deploy/ "s3://$Bucket/releases/$TAG/"
+
+      - name: Roll the instance
+        run: |
+          id=$(aws ssm send-command --instance-ids "$InstanceId" --document-name AWS-RunShellScript \
+            --comment "deploy ${TAG:0:12}" --timeout-seconds 600 \
+            --parameters "{\"commands\":[\"/usr/local/bin/qa-deploy $TAG\"],\"executionTimeout\":[\"1200\"]}" \
+            --query Command.CommandId --output text)
+          echo "command $id"
+          while :; do
+            sleep 10
+            status=$(aws ssm get-command-invocation --command-id "$id" --instance-id "$InstanceId" --query Status --output text 2>/dev/null || echo Pending)
+            case "$status" in Pending|InProgress|Delayed) continue ;; esac
+            break
+          done
+          aws ssm get-command-invocation --command-id "$id" --instance-id "$InstanceId" --query StandardOutputContent --output text
+          aws ssm get-command-invocation --command-id "$id" --instance-id "$InstanceId" --query StandardErrorContent --output text >&2
+          echo "status: $status"
+          [ "$status" = Success ]

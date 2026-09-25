@@ -1,8 +1,10 @@
 /**
  * Product spec §13.1 — four emails and no more (plus the outcome ask and the
  * export link). Local development writes messages to MAIL_DIR so tests and the
- * dev mailbox can read them; production swaps in SES behind the same interface.
+ * dev mailbox can read them; production (MAIL_TRANSPORT=ses) sends through SES
+ * behind the same interface.
  */
+import { SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { config } from "./config";
@@ -34,11 +36,43 @@ export class FileMailer implements Mailer {
   }
 }
 
-let mailer: Mailer = new FileMailer();
-export function useMailer(next: Mailer) {
+/** Region and credentials come from the environment (on EC2, the instance role). */
+export class SesMailer implements Mailer {
+  constructor(
+    private readonly client: Pick<SESv2Client, "send"> = new SESv2Client({}),
+    private readonly from = config.mailFrom,
+    private readonly configurationSet = process.env.SES_CONFIGURATION_SET || undefined,
+  ) {}
+  async send(mail: Mail) {
+    await this.client.send(
+      new SendEmailCommand({
+        FromEmailAddress: this.from,
+        Destination: { ToAddresses: [mail.to] },
+        ReplyToAddresses: [config.supportEmail],
+        ConfigurationSetName: this.configurationSet,
+        EmailTags: [{ Name: "kind", Value: mail.kind }],
+        Content: {
+          Simple: {
+            Subject: { Data: mail.subject, Charset: "UTF-8" },
+            Body: { Html: { Data: mail.html, Charset: "UTF-8" }, Text: { Data: mail.text, Charset: "UTF-8" } },
+          },
+        },
+      }),
+    );
+  }
+}
+
+let mailer: Mailer | null = null;
+export function useMailer(next: Mailer | null) {
   mailer = next;
 }
 export function getMailer(): Mailer {
+  if (!mailer) {
+    const transport = process.env.MAIL_TRANSPORT ?? "file";
+    if (transport === "ses") mailer = new SesMailer();
+    else if (transport === "file") mailer = new FileMailer();
+    else throw new Error(`MAIL_TRANSPORT must be "ses" or "file", not "${transport}"`);
+  }
   return mailer;
 }
 
